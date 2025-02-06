@@ -2,9 +2,10 @@
 
 #include <AngelScript/include/angelscript.h>
 #include <AngelScriptPlugin/Resources/AngelScriptResource.h>
-#include <AngelScriptPlugin/Runtime/AngelScriptEngineSingleton.h>
-#include <AngelScriptPlugin/Runtime/AngelScriptFunctionProperty.h>
-#include <AngelScriptPlugin/Runtime/AngelScriptInstance.h>
+#include <AngelScriptPlugin/Runtime/AsEngineSingleton.h>
+#include <AngelScriptPlugin/Runtime/AsFunctionDispatch.h>
+#include <AngelScriptPlugin/Runtime/AsInstance.h>
+#include <AngelScriptPlugin/Utils/AngelScriptUtils.h>
 #include <Core/Scripting/ScriptAttributes.h>
 #include <Core/World/Component.h>
 #include <Foundation/Communication/Message.h>
@@ -105,7 +106,7 @@ ezResourceLoadDesc ezAngelScriptResource::UpdateContent(ezStreamReader* pStream)
     ezHybridArray<ezUInt8, 1024 * 8> bytecode;
     (*pStream).ReadArray(bytecode).AssertSuccess();
 
-    m_pModule = pAs->LoadFromByteCode(sModuleID, bytecode);
+    m_pModule = ezAngelScriptUtils::LoadFromByteCode(pAs->GetEngine(), sModuleID, bytecode);
   }
 
   if (m_pModule == nullptr)
@@ -192,23 +193,19 @@ void ezAngelScriptResource::FindMessageHandlers(const asITypeInfo* pClassType, e
     if (pFunc->GetParamCount() != 1)
       continue;
 
+    // that start with "OnMsg"
     if (ezStringUtils::StartsWith(pFunc->GetName(), "OnMsg") == false)
       continue;
 
     int iArgTypeId;
     pFunc->GetParam(0, &iArgTypeId);
 
-    const asITypeInfo* pTInfo = pAs->GetEngine()->GetTypeInfoById(iArgTypeId);
+    const ezRTTI* pArgType = ezAngelScriptUtils::MapToRTTI(iArgTypeId, pAs->GetEngine());
 
-    if (pTInfo == nullptr)
-      continue;
-
-    sArgType = pTInfo->GetName();
-
-    const ezRTTI* pArgType = ezRTTI::FindTypeByName(sArgType);
     if (pArgType == nullptr)
       continue;
 
+    // has to be a type derived from ezMessage
     if (!pArgType->IsDerivedFrom<ezMessage>())
       continue;
 

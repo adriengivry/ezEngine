@@ -1,7 +1,7 @@
 #include <EditorPluginAssets/EditorPluginAssetsPCH.h>
 
 #include <AngelScript/include/angelscript.h>
-#include <AngelScriptPlugin/Runtime/AngelScriptEngineSingleton.h>
+#include <AngelScriptPlugin/Runtime/AsEngineSingleton.h>
 #include <AngelScriptPlugin/Utils/AngelScriptUtils.h>
 #include <EditorFramework/Assets/AssetCurator.h>
 #include <EditorFramework/Assets/AssetStatusIndicator.moc.h>
@@ -328,7 +328,7 @@ void ezQtAngelScriptAssetDocumentWindow::ProcessMessageEventHandler(const ezEdit
   }
 }
 
-static void ReadSet(ezStringView sBasePath, ezStringView sFile, QSet<QString>& inout_Set)
+static void ReadSet(ezStringView sBasePath, ezStringView sFile, QSet<QString>& inout_set)
 {
   const ezStringBuilder fullPath(sBasePath, "/", sFile);
 
@@ -348,7 +348,7 @@ static void ReadSet(ezStringView sBasePath, ezStringView sFile, QSet<QString>& i
 
     if (!line.IsEmpty())
     {
-      inout_Set.insert(ezMakeQString(line));
+      inout_set.insert(ezMakeQString(line));
     }
   }
 }
@@ -372,6 +372,7 @@ void ezQtAngelScriptAssetDocumentWindow::RetrieveScriptInfos()
   ReadSet(sBasePath, "Namespaces.txt", g_KeywordsGreen);
   ReadSet(sBasePath, "GlobalFunctions.txt", g_BuiltIn);
   ReadSet(sBasePath, "Methods.txt", g_BuiltIn);
+  ReadSet(sBasePath, "Enums.txt", g_BuiltIn);
   ReadSet(sBasePath, "Properties.txt", g_BuiltIn);
 }
 

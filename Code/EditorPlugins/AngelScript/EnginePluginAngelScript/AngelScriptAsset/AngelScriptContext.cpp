@@ -1,8 +1,8 @@
 #include <EnginePluginAngelScript/EnginePluginAngelScriptPCH.h>
 
 #include <AngelScript/include/angelscript.h>
-#include <AngelScriptPlugin/Runtime/AngelScriptEngineSingleton.h>
-#include <AngelScriptPlugin/Runtime/AngelScriptInstance.h>
+#include <AngelScriptPlugin/Runtime/AsEngineSingleton.h>
+#include <AngelScriptPlugin/Runtime/AsInstance.h>
 #include <AngelScriptPlugin/Utils/AngelScriptUtils.h>
 #include <EnginePluginAngelScript/AngelScriptAsset/AngelScriptContext.h>
 #include <Foundation/IO/FileSystem/DeferredFileWriter.h>
@@ -45,7 +45,7 @@ ezStatus ezAngelScriptDocumentContext::ExportDocument(const ezExportDocumentMsgT
   }
 
   ezHybridArray<ezUInt8, 1024 * 8> bytecode;
-  ezAngelScriptEngineSingleton::SaveByteCode(pModule, bytecode);
+  ezAngelScriptUtils::SaveByteCode(pModule, bytecode);
   pModule->Discard();
 
   ezDeferredFileWriter out;
@@ -146,20 +146,19 @@ void ezAngelScriptDocumentContext::SyncExposedParameters()
     SendProcessMessage(&msg);
   }
 
-  for (ezUInt32 i2 = 0; i2 < pClassType->GetPropertyCount(); ++i2)
+  for (ezUInt32 idx = 0; idx < pClassType->GetPropertyCount(); ++idx)
   {
     const char* szName;
     int typeId;
 
     bool isPrivate = false, isProtected = false, isReference = false;
-    pClassType->GetProperty(i2, &szName, &typeId, &isPrivate, &isProtected, nullptr, &isReference);
-    ezStringBuilder sDecl = pClassType->GetPropertyDeclaration(i2);
+    pClassType->GetProperty(idx, &szName, &typeId, &isPrivate, &isProtected, nullptr, &isReference);
 
     if (isPrivate || isProtected)
       continue;
 
     ezVariant defVal;
-    if (ezAngelScriptUtils::ReadAsProperty(typeId, pInstance->GetAddressOfProperty(i2), pModule->GetEngine(), defVal).Succeeded())
+    if (ezAngelScriptUtils::ReadFromAsTypeAtLocation(pModule->GetEngine(), typeId, pInstance->GetAddressOfProperty(idx), defVal).Succeeded())
     {
       ezSimpleDocumentConfigMsgToEditor msg;
       msg.m_DocumentGuid = m_DocumentGuid;
@@ -228,10 +227,10 @@ asIScriptModule* ezAngelScriptDocumentContext::CompileModule()
   return pModule;
 }
 
-static void WriteSet(ezStringView file, const ezSet<ezString>& set)
+static void WriteSet(ezStringView sFile, const ezSet<ezString>& set)
 {
   ezFileWriter writer;
-  if (writer.Open(file).Failed())
+  if (writer.Open(sFile).Failed())
     return;
 
   const char* szLineBreak = "\n";
@@ -248,106 +247,49 @@ static void WriteSet(ezStringView file, const ezSet<ezString>& set)
 
 void ezAngelScriptDocumentContext::RetrieveScriptInfos(ezStringView sBasePath)
 {
-  ezSet<ezString> typeNames;
-  ezSet<ezString> namespaceNames;
-  ezSet<ezString> globalFunctionNames;
-  ezSet<ezString> methodNames;
-  ezSet<ezString> allDecls;
-  ezSet<ezString> properties;
-  ezSet<ezString> enums;
+  auto pEngine = ezAngelScriptEngineSingleton::GetSingleton()->GetEngine();
 
-  auto pAS = ezAngelScriptEngineSingleton::GetSingleton();
-  asIScriptEngine* pEngine = pAS->GetEngine();
-
-  ezStringBuilder tmp;
-
-  for (ezUInt32 funcIdx = 0; funcIdx < pEngine->GetGlobalFunctionCount(); ++funcIdx)
   {
-    const asIScriptFunction* pFunc = pEngine->GetGlobalFunctionByIndex(funcIdx);
-    globalFunctionNames.Insert(pFunc->GetName());
-    allDecls.Insert(pFunc->GetDeclaration(true, true, true));
-    namespaceNames.Insert(pFunc->GetNamespace());
+    ezAsInfos infos;
+    ezAngelScriptUtils::RetrieveAsInfos(pEngine, infos);
+
+    ezStringBuilder sFullPath;
+
+    sFullPath.SetPath(sBasePath, "Types.txt");
+    WriteSet(sFullPath, infos.m_Types);
+
+    sFullPath.SetPath(sBasePath, "Namespaces.txt");
+    WriteSet(sFullPath, infos.m_Namespaces);
+
+    sFullPath.SetPath(sBasePath, "GlobalFunctions.txt");
+    WriteSet(sFullPath, infos.m_GlobalFunctions);
+
+    sFullPath.SetPath(sBasePath, "Methods.txt");
+    WriteSet(sFullPath, infos.m_Methods);
+
+    sFullPath.SetPath(sBasePath, "Properties.txt");
+    WriteSet(sFullPath, infos.m_Properties);
+
+    sFullPath.SetPath(sBasePath, "Enums.txt");
+    WriteSet(sFullPath, infos.m_EnumValues);
+
+    sFullPath.SetPath(sBasePath, "AllDeclarations.txt");
+    WriteSet(sFullPath, infos.m_AllDeclarations);
+
+    sFullPath.SetPath(sBasePath, "NotRegisteredDecls.txt");
+    WriteSet(sFullPath, ezAngelScriptEngineSingleton::GetSingleton()->GetNotRegistered());
   }
 
-  for (ezUInt32 idx = 0; idx < pEngine->GetEnumCount(); ++idx)
   {
-    const asITypeInfo* pType = pEngine->GetEnumByIndex(idx);
-    typeNames.Insert(pType->GetName());
+    ezStringBuilder sPredef;
+    ezAngelScriptUtils::GenerateAsPredefinedFile(pEngine, sPredef);
 
-    for (ezUInt32 valIdx = 0; valIdx < pType->GetEnumValueCount(); ++valIdx)
+    ezStringBuilder sFullPath;
+    sFullPath.SetPath(sBasePath, "../../as.predefined");
+    ezFileWriter file;
+    if (file.Open(sFullPath).Succeeded())
     {
-      int value;
-      const char* szString = pType->GetEnumValueByIndex(valIdx, &value);
-
-      enums.Insert(szString);
-      tmp.Set(pType->GetName(), "::", szString);
-      allDecls.Insert(tmp);
+      file.WriteBytes(sPredef.GetData(), sPredef.GetElementCount()).AssertSuccess();
     }
   }
-
-  for (ezUInt32 typeIdx = 0; typeIdx < pEngine->GetObjectTypeCount(); ++typeIdx)
-  {
-    const asITypeInfo* pType = pEngine->GetObjectTypeByIndex(typeIdx);
-
-    typeNames.Insert(pType->GetName());
-    namespaceNames.Insert(pType->GetNamespace());
-
-    for (ezUInt32 methodIdx = 0; methodIdx < pType->GetMethodCount(); ++methodIdx)
-    {
-      const asIScriptFunction* pFunc = pType->GetMethodByIndex(methodIdx, false);
-
-      if (pFunc->IsProperty())
-      {
-        tmp = pFunc->GetName();
-        tmp.TrimWordStart("set_");
-
-        if (tmp.TrimWordStart("get_"))
-        {
-          if (const ezRTTI* pRtti = ezAngelScriptUtils::MapToRTTI(pFunc->GetReturnTypeId(), pFunc->GetEngine()))
-          {
-            tmp.Prepend(pRtti->GetTypeName(), " ");
-          }
-          else
-          {
-            tmp.Prepend("unknown-type ");
-          }
-
-          properties.Insert(tmp);
-        }
-
-        allDecls.Insert(pFunc->GetDeclaration(true, true, true));
-      }
-      else
-      {
-        methodNames.Insert(pFunc->GetName());
-        allDecls.Insert(pFunc->GetDeclaration(true, true, true));
-      }
-    }
-  }
-
-  ezStringBuilder sFullPath;
-
-  sFullPath.SetPath(sBasePath, "Types.txt");
-  WriteSet(sFullPath, typeNames);
-
-  sFullPath.SetPath(sBasePath, "Namespaces.txt");
-  WriteSet(sFullPath, namespaceNames);
-
-  sFullPath.SetPath(sBasePath, "GlobalFunctions.txt");
-  WriteSet(sFullPath, globalFunctionNames);
-
-  sFullPath.SetPath(sBasePath, "Methods.txt");
-  WriteSet(sFullPath, methodNames);
-
-  sFullPath.SetPath(sBasePath, "Properties.txt");
-  WriteSet(sFullPath, properties);
-
-  sFullPath.SetPath(sBasePath, "Enums.txt");
-  WriteSet(sFullPath, enums);
-
-  sFullPath.SetPath(sBasePath, "AllDeclarations.txt");
-  WriteSet(sFullPath, allDecls);
-
-  sFullPath.SetPath(sBasePath, "NotRegisteredDecls.txt");
-  WriteSet(sFullPath, pAS->GetNotRegistered());
 }

@@ -22,21 +22,14 @@ public:
   asIScriptEngine* GetEngine() const { return m_pEngine; }
 
   asIScriptModule* SetModuleCode(ezStringView sModuleName, ezStringView sCode, bool bAddExternalSection);
-
   asIScriptModule* CompileModule(ezStringView sModuleName, ezStringView sMainClass, ezStringView sRefFilePath, ezStringView sCode);
-
-  void AddForbiddenType(const char* szTypeName);
-
-  bool IsTypeForbidden(const asITypeInfo* pType) const;
-
   ezResult ValidateModule(asIScriptModule* pModule) const;
-
-  static void SaveByteCode(asIScriptModule* pModule, ezDynamicArray<ezUInt8>& out_ByteCode);
-  asIScriptModule* LoadFromByteCode(ezStringView sModuleName, ezDynamicArray<ezUInt8>& out_ByteCode) const;
 
   const ezSet<ezString>& GetNotRegistered() const { return m_NotRegistered; }
 
 private:
+  void AddForbiddenType(const char* szTypeName);
+  bool IsTypeForbidden(const asITypeInfo* pType) const;
   static void MessageCallback(const asSMessageInfo* msg, void* param);
 
   void RegisterStandardTypes();
@@ -63,13 +56,13 @@ private:
   void Register_Random();
   void Register_Math();
 
-  void Register_ScriptClass();
+  void Register_ezAngelScriptClass();
   void Register_GlobalReflectedFunctions();
   void Register_ReflectedType(const ezRTTI* pBaseType, bool bCreatable);
   void Register_ReflectedTypes();
-  void RegisterTypeFunctions(const char* szTypeName, const ezRTTI* pRtti);
-  void RegisterTypeProperties(const char* szTypeName, const ezRTTI* pRtti);
-  void RegisterGenericFunction(const char* szTypeName, const ezAbstractFunctionProperty* const pFunc, const ezScriptableFunctionAttribute* pFuncAttr);
+  void RegisterTypeFunctions(const char* szTypeName, const ezRTTI* pRtti, bool bIsInherited);
+  void RegisterTypeProperties(const char* szTypeName, const ezRTTI* pRtti, bool bIsInherited);
+  void RegisterGenericFunction(const char* szTypeName, const ezAbstractFunctionProperty* const pFunc, const ezScriptableFunctionAttribute* pFuncAttr, bool bIsInherited);
   bool AppendType(ezStringBuilder& decl, const ezRTTI* pRtti, const ezScriptableFunctionAttribute* pFuncAttr, ezUInt32 uiArg, bool& inout_VarArgs);
   bool AppendFuncArgs(ezStringBuilder& decl, const ezAbstractFunctionProperty* pFunc, const ezScriptableFunctionAttribute* pFuncAttr, ezUInt32 uiArg, bool& inout_VarArgs);
   ezString Register_EnumType(const ezRTTI* pEnumType);
@@ -84,8 +77,6 @@ private:
     AS_CHECK(typeId);
 
     m_pEngine->GetTypeInfoById(typeId)->SetUserData((void*)pRtti, ezAsUserData::RttiPtr);
-
-    m_WhitelistedValueTypes.Insert(pRtti->GetTypeName());
   }
 
   template <typename T>
@@ -96,8 +87,6 @@ private:
     AS_CHECK(typeId);
 
     m_pEngine->GetTypeInfoById(typeId)->SetUserData((void*)pRtti, ezAsUserData::RttiPtr);
-
-    m_WhitelistedValueTypes.Insert(pRtti->GetTypeName());
   }
 
   template <typename T>
@@ -117,8 +106,6 @@ private:
   ezUniquePtr<ezProxyAllocator> m_pAllocator;
   asIScriptEngine* m_pEngine = nullptr;
 
-  // TODO AngelScript: Use this ?
-  ezSet<ezString> m_WhitelistedValueTypes;
   ezSet<ezString> m_WhitelistedRefTypes;
 
   ezHybridArray<const asITypeInfo*, 16> m_ForbiddenTypes;
